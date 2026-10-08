@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Comment Extractor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#E9EEEC; --panel:#FFFFFF; --ink:#16302F; --muted:#5B706E; --line:#C9D4D1;
+  --accent:#1F6F63; --accent-ink:#FFFFFF; --warn:#A8501E; --chip-v:#DCEFE9; --chip-p:#E6E3F5; --chip-c:#F6E9D4; --chip-x:#F4DCDC;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0F1A19; --panel:#172524; --ink:#DCE8E5; --muted:#8FA6A2; --line:#2B3D3B;
+  --accent:#4DB6A4; --accent-ink:#0F1A19; --warn:#E39A6B; --chip-v:#1E3A34; --chip-p:#2A2742; --chip-c:#3A3020; --chip-x:#432526;
+}}
+:root[data-theme="dark"]{
+  --bg:#0F1A19; --panel:#172524; --ink:#DCE8E5; --muted:#8FA6A2; --line:#2B3D3B;
+  --accent:#4DB6A4; --accent-ink:#0F1A19; --warn:#E39A6B; --chip-v:#1E3A34; --chip-p:#2A2742; --chip-c:#3A3020; --chip-x:#432526;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 var(--body)}
+.wrap{max-width:1180px;margin:0 auto;padding:2.5rem 1.25rem 4rem}
+header{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;flex-wrap:wrap;margin-bottom:2rem}
+h1{font:700 clamp(2rem,5vw,3.4rem)/1 var(--display);letter-spacing:-.02em;margin:0}
+.lede{color:var(--muted);margin:.6rem 0 0;max-width:60ch}
+h2{font:700 1.2rem/1.2 var(--display);margin:0 0 .9rem}
+.grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:1.25rem}
+@media (max-width:860px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.3rem}
+label{font-weight:700;font-size:.92rem;display:block;margin-bottom:.35rem}
+.hint{color:var(--muted);font-size:.85rem;margin:.3rem 0 0}
+input[type=text],input[type=password],input[type=number],select,textarea{
+  width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:.6rem .7rem}
+textarea{min-height:150px;resize:vertical;font-size:.95rem}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.keyrow{display:flex;gap:.5rem;align-items:center}
+.keyrow input{flex:1}
+.parsed{list-style:none;margin:.8rem 0 0;padding:0;display:flex;flex-direction:column;gap:.35rem;max-height:180px;overflow:auto}
+.parsed li{display:flex;gap:.6rem;align-items:center;font-size:.85rem;min-width:0}
+.parsed code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.chip{flex:none;font-size:.75rem;font-weight:700;padding:.15rem .55rem;border-radius:99px;background:var(--chip-v)}
+.chip.playlist{background:var(--chip-p)} .chip.channel{background:var(--chip-c)} .chip.invalid{background:var(--chip-x)}
+.opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin-top:1.2rem}
+@media (max-width:480px){.opts{grid-template-columns:1fr}}
+.check{display:flex;gap:.55rem;align-items:flex-start;font-weight:400}
+.check input{margin-top:.3rem}
+.actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1.3rem}
+button{font:700 .95rem var(--body);border-radius:8px;padding:.65rem 1.1rem;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:.8rem;margin-bottom:1rem}
+.stat{border-left:3px solid var(--accent);padding:.1rem 0 .1rem .7rem}
+.stat b{display:block;font:700 1.6rem/1.1 var(--display)}
+.stat span{color:var(--muted);font-size:.85rem}
+.bar{height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin-bottom:1rem}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.log{font-size:.83rem;background:var(--bg);border-radius:8px;padding:.7rem;height:240px;overflow:auto;margin:0;list-style:none}
+.log li{padding:.15rem 0;border-bottom:1px dashed var(--line)}
+.log li.err{color:var(--warn)}
+details{margin-top:1rem;font-size:.9rem}
+summary{cursor:pointer;font-weight:700}
+details ol{padding-left:1.2rem;margin:.6rem 0 0}
+.results{margin-top:1.25rem}
+.reshead{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.9rem}
+.reshead h2{margin:0}
+.reshead .actions{margin:0}
+.filter{max-width:320px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;max-height:560px;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font-size:.87rem;min-width:760px}
+th,td{text-align:left;padding:.55rem .7rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{position:sticky;top:0;background:var(--panel);font-weight:700}
+td.text{max-width:46ch;white-space:pre-wrap;word-break:break-word}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.reply td.text{padding-left:1.8rem;color:var(--muted)}
+.empty{color:var(--muted);padding:2rem;text-align:center}
+.foot{color:var(--muted);font-size:.85rem;margin-top:.6rem}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Comment Extractor</h1>
+      <p class="lede">Paste YouTube videos, playlists or channels. Every public comment comes back as a table you can save as CSV, JSON or Excel. Runs in your browser with your own free API key.</p>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="panel" aria-labelledby="src-h">
+      <h2 id="src-h">What to extract</h2>
+
+      <label for="key">YouTube API key</label>
+      <div class="keyrow">
+        <input id="key" type="password" autocomplete="off" placeholder="AIza…">
+        <button id="showKey" type="button">Show</button>
+      </div>
+      <label class="check" style="margin-top:.5rem"><input id="remember" type="checkbox" checked> Remember key on this computer</label>
+
+      <label for="urls" style="margin-top:1.1rem">Links, one per line</label>
+      <textarea id="urls" placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ&#10;https://www.youtube.com/playlist?list=PL…&#10;https://www.youtube.com/@channelhandle"></textarea>
+      <ul class="parsed" id="parsed" aria-live="polite"></ul>
+
+      <div class="opts">
+        <div>
+          <label for="maxC">Comments per video</label>
+          <input id="maxC" type="number" min="0" value="0">
+          <p class="hint">0 means all. Counts top-level comments.</p>
+        </div>
+        <div>
+          <label for="maxV">Videos per channel or playlist</label>
+          <input id="maxV" type="number" min="0" value="0">
+          <p class="hint">0 means all. Newest come first for channels.</p>
+        </div>
+        <div>
+          <label for="order">Order</label>
+          <select id="order"><option value="relevance">Top comments</option><option value="time">Newest first</option></select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.5rem;justify-content:center">
+          <label class="check"><input id="replies" type="checkbox" checked> Include replies</label>
+          <label class="check"><input id="anon" type="checkbox"> Anonymise authors</label>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="run" class="primary" type="button">Extract comments</button>
+        <button id="stop" type="button" disabled>Stop</button>
+      </div>
+
+      <details>
+        <summary>How to get a free API key (about 5 minutes)</summary>
+        <ol>
+          <li>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> and create a project.</li>
+          <li>Go to APIs &amp; Services → Library, search for “YouTube Data API v3” and enable it.</li>
+          <li>Go to Credentials → Create credentials → API key, and copy it.</li>
+          <li>Optional: edit the key and restrict it to YouTube Data API v3 only.</li>
+        </ol>
+        <p class="hint">The free quota is 10,000 units a day. One unit returns up to 100 comments, so that is roughly a million comments a day. The quota resets at midnight Pacific time.</p>
+      </details>
+    </section>
+
+    <section class="panel" aria-labelledby="run-h">
+      <h2 id="run-h">Progress</h2>
+      <div class="stats">
+        <div class="stat"><b id="sVideos">0 / 0</b><span>videos done</span></div>
+        <div class="stat"><b id="sComments">0</b><span>comments</span></div>
+        <div class="stat"><b id="sReplies">0</b><span>replies</span></div>
+        <div class="stat"><b id="sUnits">0</b><span>quota units used this run</span></div>
+      </div>
+      <div class="bar" aria-hidden="true"><i id="barFill"></i></div>
+      <ul class="log" id="log" aria-live="polite"><li>Paste some links and press Extract comments.</li></ul>
+    </section>
+  </div>
+
+  <section class="panel results" aria-labelledby="res-h">
+    <div class="reshead">
+      <h2 id="res-h">Results</h2>
+      <input id="filter" class="filter" type="text" placeholder="Filter by text or author">
+      <div class="actions">
+        <button id="csv" type="button" disabled>Save CSV</button>
+        <button id="json" type="button" disabled>Save JSON</button>
+        <button id="xlsx" type="button" disabled>Save Excel</button>
+        <button id="clear" type="button" disabled>Clear</button>
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Video</th><th>Author</th><th>Comment</th><th>Likes</th><th>Replies</th><th>Posted</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="6" class="empty">No comments yet. Results appear here as they arrive.</td></tr></tbody>
+      </table>
+    </div>
+    <p class="foot" id="foot"></p>
+  </section>
+</div>
+
+<script>
+const API = 'https://www.googleapis.com/youtube/v3/';
+const $ = id => document.getElementById(id);
+const S = { rows: [], stop: false, running: false, units: 0, done: 0, total: 0, comments: 0, replies: 0 };
+const PREVIEW_LIMIT = 500;
+
+/* ---------- storage ---------- */
+try { const k = localStorage.getItem('ce_key'); if (k) $('key').value = k; } catch (e) {}
+function saveKey() {
+  try {
+    if ($('remember').checked) localStorage.setItem('ce_key', $('key').value.trim());
+    else localStorage.removeItem('ce_key');
+  } catch (e) {}
+}
+$('showKey').onclick = () => {
+  const k = $('key'); const show = k.type === 'password';
+  k.type = show ? 'text' : 'password'; $('showKey').textContent = show ? 'Hide' : 'Show';
+};
+
+/* ---------- link parsing ---------- */
+function parseLine(raw) {
+  const s = raw.trim();
+  if (!s) return null;
+  if (/^[\w-]{11}$/.test(s)) return { type: 'video', id: s, raw: s };
+  if (/^UC[\w-]{22}$/.test(s)) return { type: 'channel', by: 'id', value: s, raw: s };
+  if (/^(PL|UU|OL|FL|LL)[\w-]{10,}$/.test(s)) return { type: 'playlist', id: s, raw: s };
+  if (/^@[\w.-]+$/.test(s)) return { type: 'channel', by: 'handle', value: s, raw: s };
+  let u;
+  try { u = new URL(/^https?:\/\//i.test(s) ? s : 'https://' + s); } catch (e) { return { type: 'invalid', raw: s }; }
+  const host = u.hostname.replace(/^(www|m|music)\./, '');
+  const parts = u.pathname.split('/').filter(Boolean);
+  if (host === 'youtu.be' && parts[0]) return { type: 'video', id: parts[0].slice(0, 11), raw: s };
+  if (host !== 'youtube.com' && host !== 'youtube-nocookie.com') return { type: 'invalid', raw: s };
+  const v = u.searchParams.get('v'), list = u.searchParams.get('list');
+  if (parts[0] === 'playlist' && list) return { type: 'playlist', id: list, raw: s };
+  if (parts[0] === 'watch' && v) return { type: 'video', id: v, raw: s };
+  if (['shorts', 'live', 'embed', 'v'].includes(parts[0]) && parts[1]) return { type: 'video', id: parts[1].slice(0, 11), raw: s };
+  if (parts[0] === 'channel' && parts[1]) return { type: 'channel', by: 'id', value: parts[1], raw: s };
+  if (parts[0] && parts[0].startsWith('@')) return { type: 'channel', by: 'handle', value: decodeURIComponent(parts[0]), raw: s };
+  if (parts[0] === 'user' && parts[1]) return { type: 'channel', by: 'user', value: parts[1], raw: s };
+  if (parts[0] === 'c' && parts[1]) return { type: 'channel', by: 'handle', value: '@' + parts[1], raw: s };
+  if (list) return { type: 'playlist', id: list, raw: s };
+  return { type: 'invalid', raw: s };
+}
+function parseAll() { return $('urls').value.split(/\n/).map(parseLine).filter(Boolean); }
+function renderParsed() {
+  const ul = $('parsed'); ul.innerHTML = '';
+  for (const p of parseAll()) {
+    const li = document.createElement('li');
+    const chip = document.createElement('span');
+    chip.className = 'chip ' + p.type;
+    chip.textContent = p.type === 'invalid' ? 'not recognised' : p.type;
+    const code = document.createElement('code'); code.textContent = p.raw;
+    li.append(chip, code); ul.append(li);
+  }
+}
+$('urls').addEventListener('input', renderParsed);
+
+/* ---------- API ---------- */
+class ApiError extends Error { constructor(msg, reason) { super(msg); this.reason = reason; } }
+async function api(endpoint, params) {
+  const qs = new URLSearchParams({ ...params, key: $('key').value.trim() });
+  for (const [k, v] of [...qs]) if (v === 'undefined' || v === '') qs.delete(k);
+  let r, j;
+  try { r = await fetch(API + endpoint + '?' + qs); j = await r.json(); }
+  catch (e) { throw new ApiError('Network error. Check your internet connection.', 'network'); }
+  S.units += 1; paintStats();
+  if (!r.ok) {
+    const reason = j?.error?.errors?.[0]?.reason || '';
+    const tmp = document.createElement('div'); tmp.innerHTML = j?.error?.message || r.statusText;
+    throw new ApiError(tmp.textContent, reason);
+  }
+  return j;
+}
+const FATAL = ['quotaExceeded', 'dailyLimitExceeded', 'keyInvalid', 'accessNotConfigured', 'forbidden', 'API_KEY_INVALID', 'network'];
+function isFatal(e) { return FATAL.includes(e.reason) || /API key not valid|has not been used|is disabled/i.test(e.message); }
+
+async function playlistVideoIds(playlistId, max) {
+  const ids = []; let pageToken;
+  do {
+    const j = await api('playlistItems', { part: 'contentDetails', playlistId, maxResults: 50, pageToken });
+    for (const it of j.items || []) { ids.push(it.contentDetails.videoId); if (max && ids.length >= max) return ids; }
+    pageToken = j.nextPageToken;
+  } while (pageToken && !S.stop);
+  return ids;
+}
+async function channelUploads(p) {
+  const params = { part: 'contentDetails,snippet' };
+  if (p.by === 'id') params.id = p.value;
+  else if (p.by === 'handle') params.forHandle = p.value;
+  else params.forUsername = p.value;
+  const j = await api('channels', params);
+  const ch = j.items && j.items[0];
+  if (!ch) throw new ApiError('Channel not found: ' + p.value, 'notFound');
+  return { title: ch.snippet.title, uploads: ch.contentDetails.relatedPlaylists.uploads };
+}
+async function videoMeta(ids) {
+  const map = {};
+  for (let i = 0; i < ids.length; i += 50) {
+    const j = await api('videos', { part: 'snippet,statistics', id: ids.slice(i, i + 50).join(',') });
+    for (const v of j.items || []) map[v.id] = { title: v.snippet.title, channelId: v.snippet.channelId, commentCount: +(v.statistics.commentCount || 0) };
+  }
+  return map;
+}
+
+/* ---------- comment extraction ---------- */
+function hash(str) { let h = 2166136261; for (const c of str) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+function makeRow(c, vid, meta, type, parentId, replyCount, opts) {
+  const s = c.snippet; const cid = s.authorChannelId?.value || '';
+  return {
+    video_id: vid, video_title: meta?.title || '', video_url: 'https://www.youtube.com/watch?v=' + vid,
+    comment_id: c.id, parent_id: parentId || '', type,
+    author: opts.anon ? 'user_' + hash(cid || s.authorDisplayName || c.id) : (s.authorDisplayName || ''),
+    author_channel_url: opts.anon ? '' : (s.authorChannelUrl || ''),
+    is_video_creator: !!(cid && meta && cid === meta.channelId),
+    text: s.textDisplay ?? s.textOriginal ?? '',
+    likes: s.likeCount || 0, reply_count: replyCount || 0,
+    published_at: s.publishedAt, updated_at: s.updatedAt
+  };
+}
+async function allReplies(parentId) {
+  const out = []; let pageToken;
+  do {
+    const j = await api('comments', { part: 'snippet', parentId, maxResults: 100, textFormat: 'plainText', pageToken });
+    out.push(...(j.items || [])); pageToken = j.nextPageToken;
+  } while (pageToken && !S.stop);
+  return out;
+}
+async function extractVideo(vid, meta, opts) {
+  let pageToken, top = 0;
+  outer: do {
+    const j = await api('commentThreads', { part: 'snippet,replies', videoId: vid, maxResults: 100, order: opts.order, textFormat: 'plainText', pageToken });
+    for (const t of j.items || []) {
+      const tc = t.snippet.topLevelComment, n = t.snippet.totalReplyCount || 0;
+      S.rows.push(makeRow(tc, vid, meta, 'comment', '', n, opts)); S.comments++; top++;
+      if (opts.replies && n > 0) {
+        let reps = t.replies?.comments || [];
+        if (n > reps.length) reps = await allReplies(tc.id);
+        reps.sort((a, b) => a.snippet.publishedAt.localeCompare(b.snippet.publishedAt));
+        for (const r of reps) { S.rows.push(makeRow(r, vid, meta, 'reply', tc.id, 0, opts)); S.replies++; }
+      }
+      if (opts.maxC && top >= opts.maxC) break outer;
+      if (S.stop) break outer;
+    }
+    paintStats(); schedulePreview();
+    pageToken = j.nextPageToken;
+  } while (pageToken && !S.stop);
+  return top;
+}
+
+/* ---------- run ---------- */
+async function run() {
+  const key = $('key').value.trim();
+  if (!key) { log('Add your API key first. Open “How to get a free API key” for steps.', true); $('key').focus(); return; }
+  const items = parseAll().filter(p => p.type !== 'invalid');
+  if (!items.length) { log('Paste at least one YouTube link.', true); $('urls').focus(); return; }
+  saveKey();
+  const opts = { maxC: +$('maxC').value || 0, maxV: +$('maxV').value || 0, order: $('order').value, replies: $('replies').checked, anon: $('anon').checked };
+  Object.assign(S, { stop: false, running: true, units: 0, done: 0, total: 0 });
+  setRunning(true); $('log').innerHTML = '';
+
+  try {
+    // 1. resolve every link into video IDs
+    const ids = [];
+    for (const p of items) {
+      if (S.stop) break;
+      try {
+        if (p.type === 'video') ids.push(p.id);
+        else if (p.type === 'playlist') {
+          const v = await playlistVideoIds(p.id, opts.maxV); ids.push(...v);
+          log(`Playlist ${p.id}: ${v.length} videos`);
+        } else {
+          const ch = await channelUploads(p);
+          const v = await playlistVideoIds(ch.uploads, opts.maxV); ids.push(...v);
+          log(`Channel “${ch.title}”: ${v.length} videos`);
+        }
+      } catch (e) { log(`Skipped ${p.raw}: ${e.message}`, true); if (isFatal(e)) throw e; }
+    }
+    const unique = [...new Set(ids)];
+    S.total = unique.length; paintStats();
+    if (!unique.length) { log('No videos found in those links.', true); return; }
+
+    // 2. titles and channel IDs
+    const meta = await videoMeta(unique);
+
+    // 3. comments
+    for (const vid of unique) {
+      if (S.stop) break;
+      const m = meta[vid];
+      const name = m ? `“${m.title}”` : vid;
+      try {
+        if (!m) { log(`Skipped ${vid}: video not found or private`, true); }
+        else {
+          const n = await extractVideo(vid, m, opts);
+          log(`${name}: ${n.toLocaleString()} comments`);
+        }
+      } catch (e) {
+        if (e.reason === 'commentsDisabled') log(`${name}: comments are turned off`, true);
+        else { log(`${name}: ${e.message}`, true); if (isFatal(e)) throw e; }
+      }
+      S.done++; paintStats();
+    }
+    log(S.stop ? 'Stopped. Everything collected so far is saved below.' : `Finished. ${S.rows.length.toLocaleString()} rows ready to save.`);
+  } catch (e) {
+    if (e.reason === 'quotaExceeded' || e.reason === 'dailyLimitExceeded') log('Daily quota used up. It resets at midnight Pacific time. Results so far are kept below.', true);
+    else log('Stopped: ' + e.message, true);
+  } finally {
+    S.running = false; setRunning(false); paintStats(); renderPreview();
+  }
+}
+$('run').onclick = run;
+$('stop').onclick = () => { S.stop = true; $('stop').disabled = true; log('Stopping after the current request…'); };
+
+/* ---------- UI updates ---------- */
+function log(msg, err) {
+  const li = document.createElement('li'); li.textContent = msg; if (err) li.className = 'err';
+  $('log').append(li); $('log').scrollTop = $('log').scrollHeight;
+}
+function paintStats() {
+  $('sVideos').textContent = `${S.done} / ${S.total}`;
+  $('sComments').textContent = S.comments.toLocaleString();
+  $('sReplies').textContent = S.replies.toLocaleString();
+  $('sUnits').textContent = S.units.toLocaleString();
+  $('barFill').style.width = S.total ? (S.done / S.total * 100) + '%' : '0';
+}
+function setRunning(on) {
+  $('run').disabled = on; $('stop').disabled = !on;
+  const has = S.rows.length > 0;
+  ['csv', 'json', 'xlsx', 'clear'].forEach(id => $(id).disabled = on || !has);
+  if (typeof XLSX === 'undefined') { $('xlsx').disabled = true; $('xlsx').title = 'Excel export needs an internet connection to load'; }
+}
+let previewTimer;
+function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 400); }
+function renderPreview() {
+  const q = $('filter').value.trim().toLowerCase();
+  const rows = q ? S.rows.filter(r => r.text.toLowerCase().includes(q) || r.author.toLowerCase().includes(q)) : S.rows;
+  const tb = $('tbody'); tb.innerHTML = '';
+  if (!rows.length) {
+    tb.innerHTML = `<tr><td colspan="6" class="empty">${S.rows.length ? 'Nothing matches that filter.' : 'No comments yet. Results appear here as they arrive.'}</td></tr>`;
+    $('foot').textContent = ''; return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const r of rows.slice(0, PREVIEW_LIMIT)) {
+    const tr = document.createElement('tr'); if (r.type === 'reply') tr.className = 'reply';
+    const cells = [r.video_title || r.video_id, r.author + (r.is_video_creator ? ' (creator)' : ''), (r.type === 'reply' ? '↳ ' : '') + r.text, r.likes.toLocaleString(), r.type === 'comment' ? r.reply_count.toLocaleString() : '', (r.published_at || '').slice(0, 10)];
+    cells.forEach((c, i) => { const td = document.createElement('td'); td.textContent = c; if (i === 2) td.className = 'text'; if (i === 3 || i === 4) td.className = 'num'; tr.append(td); });
+    frag.append(tr);
+  }
+  tb.append(frag);
+  $('foot').textContent = rows.length > PREVIEW_LIMIT
+    ? `Showing the first ${PREVIEW_LIMIT} of ${rows.length.toLocaleString()} rows. Saved files include all of them.`
+    : `${rows.length.toLocaleString()} rows.`;
+}
+$('filter').addEventListener('input', schedulePreview);
+
+/* ---------- export ---------- */
+const COLS = ['video_id', 'video_title', 'video_url', 'comment_id', 'parent_id', 'type', 'author', 'author_channel_url', 'is_video_creator', 'text', 'likes', 'reply_count', 'published_at', 'updated_at'];
+function stamp() { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`; }
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+$('csv').onclick = () => {
+  const esc = v => { const s = String(v ?? ''); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [COLS.join(',')].concat(S.rows.map(r => COLS.map(c => esc(r[c])).join(',')));
+  download(new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }), `comments-${stamp()}.csv`);
+};
+$('json').onclick = () => download(new Blob([JSON.stringify(S.rows, null, 2)], { type: 'application/json' }), `comments-${stamp()}.json`);
+$('xlsx').onclick = () => {
+  const ws = XLSX.utils.json_to_sheet(S.rows.map(r => { const o = {}; COLS.forEach(c => o[c] = typeof r[c] === 'string' ? r[c].slice(0, 32000) : r[c]); return o; }), { header: COLS });
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Comments');
+  XLSX.writeFile(wb, `comments-${stamp()}.xlsx`);
+};
+$('clear').onclick = () => {
+  Object.assign(S, { rows: [], comments: 0, replies: 0, done: 0, total: 0, units: 0 });
+  paintStats(); renderPreview(); setRunning(false);
+};
+setRunning(false);
+</script>
+</body>
+</html>
